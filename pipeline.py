@@ -19,12 +19,12 @@ stepfunctions.set_stream_logger(level=logging.INFO)
 id = uuid.uuid4().hex
 
 REGION='us-east-1'
-BUCKET='<データを準備した際に指定したバケット>'
-FLOW_NAME='flow_{}'.format(id) 
+BUCKET='sagemaker-cicd-20200910-065641'
+FLOW_NAME='flow_{}'.format(id)
 TRAINING_JOB_NAME='sf-train-{}'.format(id) # To avoid duplication of job name
-GLUE_ROLE = '<your-glue-role>'
-SAGEMAKER_ROLE = '<your-sagemaker-role>'
-WORKFLOW_ROLE='<your-stepfunctions-role>'
+GLUE_ROLE = 'arn:aws:iam::815969174475:role/AWSGlueServiceRoleDefaultTaketosk'
+SAGEMAKER_ROLE = 'arn:aws:iam::815969174475:role/sageMaker-groundtruth-custom'
+WORKFLOW_ROLE='arn:aws:iam::815969174475:role/StepFunctionsWorkflowExecutionRole-bp'
 
 
 s3 = boto3.resource('s3')
