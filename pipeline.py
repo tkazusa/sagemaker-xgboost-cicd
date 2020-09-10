@@ -7,7 +7,9 @@ import stepfunctions
 import boto3
 import sagemaker
 from sagemaker import get_execution_role
-from sagemaker.estimator import XGBoost
+from sagemaker.estimator import Estimator
+from sagemaker.session import s3_input
+from sagemaker.amazon.amazon_estimator import get_image_uri
 
 from stepfunctions import steps
 from stepfunctions.inputs import ExecutionInput
@@ -17,21 +19,17 @@ stepfunctions.set_stream_logger(level=logging.INFO)
 id = uuid.uuid4().hex
 
 REGION='us-east-1'
-BUCKET='sagemaker-xgboost-test'
+BUCKET='<データを準備した際に指定したバケット>'
 FLOW_NAME='flow_{}'.format(id) 
 TRAINING_JOB_NAME='sf-train-{}'.format(id) # To avoid duplication of job name
-GLUE_ROLE = 'arn:aws:iam::815969174475:role/AWSGlueServiceRoleDefaultTaketosk'
-SAGEMAKER_ROLE = 'arn:aws:iam::815969174475:role/sageMaker-groundtruth-custom'
-WORKFLOW_ROLE='arn:aws:iam::815969174475:role/StepFunctionsWorkflowExecutionRole-bp'
+GLUE_ROLE = '<your-glue-role>'
+SAGEMAKER_ROLE = '<your-sagemaker-role>'
+WORKFLOW_ROLE='<your-stepfunctions-role>'
 
 
+s3 = boto3.resource('s3')
+session = sagemaker.Session()
 
-# データのパスを指定
-input_train = 's3://{}/data/train.csv'.format(BUCKET)
-input_validation = 's3://{}/data/validation.csv'.format(BUCKET)
-
-s3_input_train = s3_input(s3_data=input_train, content_type='text/csv')
-s3_input_validation = s3_input(s3_data=input_validation, content_type='text/csv')
 
 if __name__ == '__main__':
     # flow.yaml の定義を環境変数経由で受け取る
@@ -45,7 +43,6 @@ if __name__ == '__main__':
     execution_input = ExecutionInput(schema={
         # AWS Glue
         'bucket_name': str,
-        'S3OutputDataPath': str,
 
         # SageMaker
         'TrainJobName': str,
@@ -55,9 +52,7 @@ if __name__ == '__main__':
     # SFn のワークフローの定義を記載します
     inputs={
          # AWS Glue
-        'S3InputDataPath': str,
-        'S3OutputDataPath': str,
-
+        'bucket_name': BUCKET,
         # SageMaker Training
         'TrainJobName': TRAINING_JOB_NAME
         }
@@ -81,9 +76,9 @@ if __name__ == '__main__':
                         )
 
     etl_step = steps.GlueStartJobRunStep(
-        state_id='GlueDataProcessingStep'
+        state_id='GlueDataProcessingStep',
         parameters={
-            'JobName': glue_job_name,
+            'JobName': job['Name'],
             'Arguments': {
                 '--bucket_name': execution_input['bucket_name'],
                 }
@@ -91,8 +86,15 @@ if __name__ == '__main__':
         )
 
 
+    # データのパスを指定
+    input_train = 's3://{}/train.csv'.format(BUCKET)
+    input_validation = 's3://{}/validation.csv'.format(BUCKET)
+
+    s3_input_train = s3_input(s3_data=input_train, content_type='text/csv')
+    s3_input_validation = s3_input(s3_data=input_validation, content_type='text/csv')
+
     container = get_image_uri(boto3.Session().region_name, 'xgboost')
-    hyperparameters :  {
+    hyperparameters = {
             "max_depth": "5",
             "eta": "0.2",
             "gamma": "4",
@@ -104,17 +106,14 @@ if __name__ == '__main__':
             }
     
     xgb = sagemaker.estimator.Estimator(
-        container=container,
-        hyperparameters=hyperparameters
+        container,
+        hyperparameters=hyperparameters,
         role=SAGEMAKER_ROLE,
         train_instance_count = 1,
         train_instance_type = 'ml.m4.4xlarge',
         train_volume_size = 5,
         sagemaker_session = session
     )
-
-    ## SageMaker の学習ジョブを実行するステップ
-    data_path = {'train': args.data_path}
 
     training_step = steps.TrainingStep(
         'Train Step', 
@@ -137,7 +136,7 @@ if __name__ == '__main__':
         name=FLOW_NAME,
         definition=workflow_definition,
         role=WORKFLOW_ROLE,
-        execution_input=execution_input
+        execution_input=execution_input,
     )
     workflow.create()
 
