@@ -27,17 +27,14 @@ SAGEMAKER_ROLE = '<your-sagemaker-role>'
 WORKFLOW_ROLE='<your-stepfunctions-role>'
 
 
-s3 = boto3.resource('s3')
-session = sagemaker.Session()
-
-
 if __name__ == '__main__':
-    # flow.yaml の定義を環境変数経由で受け取る
-    # buildspec.yaml の env.variables へ直接書き込んでも良いかも
+    # buildspec.yaml の env.variables へ直接書き込んでだ場合、下記のように環境変数から設定を読み込んでくる
     #parser = argparse.ArgumentParser()
     #parser.add_argument('--data_path', type=str, default=os.environ['DATA_PATH'])
     #args = parser.parse_args()
 
+    s3 = boto3.resource('s3')
+    session = sagemaker.Session()
 
     # SFn の実行に必要な情報を渡す際のスキーマを定義します
     execution_input = ExecutionInput(schema={
@@ -49,19 +46,9 @@ if __name__ == '__main__':
         }
     )
 
-    # SFn のワークフローの定義を記載します
-    inputs={
-         # AWS Glue
-        'bucket_name': BUCKET,
-        # SageMaker Training
-        'TrainJobName': TRAINING_JOB_NAME
-        }
-
-
-
     # それぞれのステップを定義していきます
     ## AWS Glue の job を Submit するステップ
-    # バケットへの preprocess.py のアップロード
+    ## バケットへの preprocess.py のアップロード
     s3.Object(BUCKET, 'preprocess.py').upload_file('preprocess.py')
     print('s3://{} へ Glue のスクリプトがアップロードされました。'.format(BUCKET))
 
@@ -74,7 +61,7 @@ if __name__ == '__main__':
                                'ScriptLocation': 's3://{}/preprocess.py'.format(BUCKET),
                                'PythonVersion': '3'}
                         )
-
+    # StepFunctions で実行する Step として Glue Job を設定します
     etl_step = steps.GlueStartJobRunStep(
         state_id='GlueDataProcessingStep',
         parameters={
@@ -86,7 +73,8 @@ if __name__ == '__main__':
         )
 
 
-    # データのパスを指定
+    ## Amazon SageMaker の学習ジョブを作成
+    ## データのパスを指定
     input_train = 's3://{}/train.csv'.format(BUCKET)
     input_validation = 's3://{}/validation.csv'.format(BUCKET)
 
@@ -115,6 +103,7 @@ if __name__ == '__main__':
         sagemaker_session = session
     )
 
+    # 学習ジョブを Step として設定
     training_step = steps.TrainingStep(
         'Train Step', 
         estimator=xgb,
@@ -127,6 +116,7 @@ if __name__ == '__main__':
     )
 
     # このあと model_step/batch_tramsformStep: https://towardsdatascience.com/automating-machine-learning-workflows-with-aws-glue-sagemaker-and-aws-step-functions-data-science-b4ed59e4d7f9
+    
     # 各 Step を連結
     chain_list = [etl_step, training_step]
     workflow_definition = steps.Chain(chain_list)
@@ -141,4 +131,12 @@ if __name__ == '__main__':
     workflow.create()
 
     # Workflow の実行
+    ## SFn のワークフローの定義を記載します
+    inputs={
+         # AWS Glue
+        'bucket_name': BUCKET,
+        # SageMaker Training
+        'TrainJobName': TRAINING_JOB_NAME
+        }
+
     execution = workflow.execute(inputs=inputs)
