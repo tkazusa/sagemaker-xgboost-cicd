@@ -37,7 +37,8 @@ if __name__ == '__main__':
     #parser = argparse.ArgumentParser()
     #parser.add_argument('--data_path', type=str, default=os.environ['DATA_PATH'])
     #args = parser.parse_args()
-
+    
+    print('test')
 
     # SFn の実行に必要な情報を渡す際のスキーマを定義します
     execution_input = ExecutionInput(schema={
